@@ -1,0 +1,1156 @@
+// ==UserScript==
+// @name         文库下载器/支持度娘、道客、豆丁、智库、360、原创力文库
+// @namespace    wenku
+// @version      2.2
+// @description  文库下载器/支持度娘、道客、豆丁、智库、360、原创力文库的文档下载
+// @author       zhihu
+// @license      End-User License Agreement
+// @match        https://*/*
+// @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
+// @require      https://cdn.bootcdn.net/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
+// @require      https://cdn.staticfile.org/html2canvas/1.4.1/html2canvas.min.js
+// @grant        GM_xmlhttpRequest
+// @grant        GM.xmlHttpRequest
+
+// @connect      docimg1.docin.com
+// @connect      view-cache.book118.com
+// @connect      docreado.mbalib.com
+// @connect      so3.360tres.com
+// @antifeature  membership  为防止接口被盗！该脚本需要输入验证码之后才能使用完整功能，感谢理解
+// @grant        unsafeWindow
+// @downloadURL https://update.greasyfork.org/scripts/469528/%E6%96%87%E5%BA%93%E4%B8%8B%E8%BD%BD%E5%99%A8%E6%94%AF%E6%8C%81%E5%BA%A6%E5%A8%98%E3%80%81%E9%81%93%E5%AE%A2%E3%80%81%E8%B1%86%E4%B8%81%E3%80%81%E6%99%BA%E5%BA%93%E3%80%81360%E3%80%81%E5%8E%9F%E5%88%9B%E5%8A%9B%E6%96%87%E5%BA%93.user.js
+// @updateURL https://update.greasyfork.org/scripts/469528/%E6%96%87%E5%BA%93%E4%B8%8B%E8%BD%BD%E5%99%A8%E6%94%AF%E6%8C%81%E5%BA%A6%E5%A8%98%E3%80%81%E9%81%93%E5%AE%A2%E3%80%81%E8%B1%86%E4%B8%81%E3%80%81%E6%99%BA%E5%BA%93%E3%80%81360%E3%80%81%E5%8E%9F%E5%88%9B%E5%8A%9B%E6%96%87%E5%BA%93.meta.js
+// ==/UserScript==
+
+(function() {
+    'use strict';
+    //全局对象
+    const window = unsafeWindow||window
+    //---------------------------公共方法开始---------------------------
+    String.prototype.startWith=function(str){
+        if(typeof str !== 'string') str = str.toString()
+        if(this==null||this==''||this.length==0||str.length==0||str.length>this.length) return false
+        let len = str.length
+        return this.slice(0,len) === str
+    }
+       
+    String.prototype.endWith=function(str){
+        if(typeof str !== 'string') str = str.toString()
+        if(this==null||this==''||this.length==0||str.length==0||str.length>this.length) return false
+        let len = str.length
+        return this.slice(-len) === str
+    }
+     /**
+     * 公共样式
+     */
+    const COMMON_STYLE = `
+        .zh-container *{
+            padding:0;
+            margin:0
+        }
+        .zh-input{
+            outline-style: none;
+            border-radius: 5px;
+            border: 1px solid #e7e9eb;
+            color: var(--999, #999);
+            width: 100%;
+            flex: 1 1 0%;
+            font-size: 12px;
+            line-height: 16px;
+            padding:5px;
+        }
+        .zh-button{
+            text-align: center;
+            font-size: 14px;
+            padding: 7px 15px;
+            background: #54be99;
+            border: 1px solid #54bc99;
+            color: #fff;
+            border-radius: 3px;
+            user-select:none;
+            cursor:pointer;
+        }
+        .zh-button.zh-default{
+            background: #fff;
+            color: #54bc99;
+            margin-bottom: 10px;
+        }
+        .user-select{
+            user-select: none;
+        }
+    `;
+    const HREF = window.location.href;
+
+    const Utils = {
+          /**
+         * 添加css
+         * @params {String} css - css样式
+         */
+        appendStyle(css){
+            let style = document.createElement('style');
+            style.textContent = css;
+            style.type = 'text/css';
+            let doc = document.head || document.documentElement;
+            doc.appendChild(style);
+        },
+         /**
+         * 添加js文件
+         * @params {String} url - js文件地址
+         */
+        appendScript:function(url) {
+            let script = document.createElement('script');
+            script.src = url;
+            var docu = document.head || document.documentElement;
+            docu.appendChild(script);
+        },
+         /**
+         * 自动滚动页面
+         * @params {Number} distance - 每次滚动的距离
+         * @params {Number} originalLocation - 滚动条初始位置
+         * @params {Number} targetLocation - 滚动条目标位置
+         * @params {Number} delay - 每次滚动的时间差
+         */
+        scrollPage(distance,originalLocation,targetLocation,delay = 1000){
+        
+            const scrollTo = ()=>{
+                window.scrollTo({
+                    top: originalLocation,
+                    behavior: "smooth"
+                });
+            }
+
+            let time = Math.ceil(Math.abs(targetLocation - originalLocation)/distance)*delay + delay
+            Utils.toast('正在自动预览页面，请勿操作','warning',time)
+
+            //先滚动到起始位置
+            scrollTo()
+
+            let timer = null;
+
+            return new Promise((resolve, reject) => {
+                if(originalLocation<targetLocation){
+                    timer = setInterval(()=>{
+                        if(originalLocation<targetLocation){
+                            originalLocation += distance
+                            scrollTo()
+                             // 相比上次位置减10，根据自己需要的速度修改
+                        }else{
+                            clearInterval(timer)
+                            resolve(true)
+                        }
+                        
+                    },delay)
+                }else{
+                    timer = setInterval(()=>{
+                        if(originalLocation>targetLocation){
+                            originalLocation -=distance
+                            scrollTo()
+                            // 相比上次位置减10，根据自己需要的速度修改
+                        }else{
+                            clearInterval(timer)
+                            resolve(true)
+                        }
+                        
+                    },delay)
+                }
+            })
+            
+        },
+         /**
+         * 延时
+         * @params {Number} time - 需要延迟的时间
+         */
+        sleep(time){
+            return new Promise(resolve => setTimeout(resolve, time));
+        },
+         /**
+         * 网络请求
+         * @params {String} method - 请求类型（GET,POST...）
+         * @params {String} url - 请求地址
+         * @params {Object} data - 请求body
+         * @params {String} responseType - 返回的数据类型
+         */
+        request(method, url, data, headers = {} , responseType = 'text') {
+            return new Promise((resolve, reject) => {
+                let xmlHttpRequest = GM_xmlhttpRequest||GM.xmlHttpRequest
+                xmlHttpRequest({
+                    method,
+                    url,
+                    data,
+                    headers,
+                    responseType,
+                    onerror: reject,
+                    ontimeout: reject,
+                    onload: (response) => {
+                        if (response.status >= 200 && response.status < 300) {
+                            resolve(responseType === 'text' ? response.responseText : response.response);
+                        } else {
+                            reject(new Error(response.statusText));
+                        }
+                    }
+                });
+            });
+        },
+         /**
+         * 下载图片
+         * @params {String} url - 图片远程地址
+         */
+        loadImage (url) {
+            return new Promise(async (resolve, reject) => {
+                url.startsWith("//")&&(url='http:'+url);
+                if (!url) {
+                    reject('loadImage:请传入图片地址');
+                }
+                let img = await Utils.request('GET', url, null,{}, 'blob');
+                console.log(img)
+                let imgEl = document.createElement('img');
+                imgEl.onload = () => {
+                    resolve(imgEl);
+                }
+                imgEl.onabort = imgEl.onerror = reject;
+                imgEl.src = URL.createObjectURL(img);
+            })
+        },
+         /**
+         * 信息提示
+         * @params {String} msg - 信息内容
+         * @params {String} type - 信息类型
+         * @params {Number} delay - 自动移除消息的时间
+         */
+        msgBox:null,
+        toast (msg,type = 'success',delay = 3000){    
+            let typeMap = {
+                success:{
+                    bg:'#f0f9eb',
+                    text:'#67c23a',
+                    border:'#e1f3d8'
+                },
+                error:{
+                    bg:'#fef0f0',
+                    text:'#f56c6c',
+                    border:'#fde2e2'
+                },
+                warning:{
+                    bg:'#fdf6ec',
+                    text:'#e6a23c',
+                    border:'#faecd8'
+                }
+            }
+            if(!this.msgBox){
+                this.msgBox = document.createElement('div')
+                this.msgBox.style = `position: fixed;
+                                top: 100px;
+                                left: 0;
+                                right: 0;
+                                margin: 0 auto;
+                                width: 300px;
+                                padding: 20px;
+                                z-index:9999999999;
+                `
+                this.msgBox.classList.add('zh-container')
+                document.body.appendChild(this.msgBox)
+            }
+            let msgItem = document.createElement('div')
+            let id = 'msg' + new Date().getTime()
+            msgItem.setAttribute('id',id)
+            msgItem.innerHTML = `<p>${msg}</p>`
+            msgItem.style = `
+                text-align: center;
+                width: fit-content;
+                margin: 0 auto;
+                padding: 10px 20px;
+                font-size: 14px;
+                line-height: 20px;
+                border: 1px solid;
+                border-radius: 5px;
+                margin-bottom:10px;
+            `
+            msgItem.style.background = typeMap[type].bg
+            msgItem.style.color = typeMap[type].text
+            msgItem.style.borderColor = typeMap[type].border
+            this.msgBox.appendChild(msgItem)
+            setTimeout(()=>{
+                document.querySelector('#'+id).remove()
+            },delay)
+        },
+        //进度条
+        progressBox:null,
+        progress:{
+            width:500,
+            height:90,
+            padding:20,
+            createDialogElement(){
+                if(!Utils.progressBox){
+                    let css = `
+                        .zh-shadow{
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            right: 0;
+                            bottom: 0;
+                            z-index: 999999998;
+                            background-color: rgb(97 97 97 / 20%);
+                        }
+                        .zh-panel{
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            right: 0;
+                            bottom: 0;
+                            z-index: 999999998;
+                            background-color: #fff;
+                            width: ${this.width}px;
+                            height: ${this.height}px;
+                            margin: auto;
+                            border-radius: 10px;
+                            box-shadow: 0 0 6px 3px #00000026;
+                            padding:${this.padding}px;
+                            box-sizing:border-box;
+                        }
+                        .zh-panel .zh-progress-wrapper{
+                            width: 100%;
+                            background: #f1f1f1;
+                            height: 20px;
+                            position: relative;
+                            border-radius: 3px;
+                            margin-bottom: 10px;
+                        }
+                        .zh-panel .zh-progress-wrapper #zh-progress{
+                            position: absolute;
+                            left: 0;
+                            top: 0;
+                            bottom: 0;
+                            width: 0px;
+                            background: #56ab8d;
+                            border-radius: 3px;
+                        }
+                        .zh-panel .zh-progress-tips{
+                            display:flex;
+                            justify-content: space-between;
+                            font-size: 12px;
+                            line-height:20px;
+                            color: #000;
+                        }
+                        .zh-panel .zh-progress-tips #zh-text{
+                            flex: 1;
+                        }
+                        .zh-panel .zh-progress-tips #zh-progress-text{
+                            width: 50px;
+                            text-align: right;
+                            color: #56ab8d;
+                        }   
+                    `
+                    Utils.appendStyle(css)
+                    Utils.progressBox = document.createElement('div')
+                    Utils.progressBox.innerHTML = `
+                        <div class="zh-shadow"></div>
+                        <div class="zh-panel">
+                            <div class="zh-progress-wrapper">
+                                <div id="zh-progress"></div>
+                            </div>
+                            <div class="zh-progress-tips">
+                                <span id="zh-text">正在下载</span>
+                                <span id="zh-progress-text">0%</span>
+                            </div>
+                        </div>
+                    `
+                    document.body.appendChild(Utils.progressBox)
+                }
+            },
+            showStatus(text = '',progress = -1){
+                if(!Utils.progressBox){
+                    this.createDialogElement()
+                }
+                text&&(document.querySelector('.zh-panel #zh-text').innerHTML = text)
+                if (progress >= 0) {
+                    progress = Math.min(progress, 100);
+                    document.querySelector('.zh-panel #zh-progress').style.width = `${Math.floor(progress)}%`;
+                    document.querySelector('.zh-panel #zh-progress-text').innerHTML = `${Math.floor(progress)}%`;
+                }
+
+            },
+            hideStatus(){
+                Utils.progressBox.remove()
+                Utils.progressBox = null
+            }
+        },
+        //拼接Get请求链接
+        getAjaxUrl(url,params){
+            if(!url.endWith('?')) url+='?'
+            let query = ''
+            for( var i in params ){
+                query += '&' + i + '=' +  params[i];
+            }
+            query = query.slice(1)
+            return url+query;
+        },
+         /**
+         * /html转canvas
+         * @params {Object} el - 需要转换成canvas的元素
+         */
+        htmlToCanvas(el){
+            return new Promise((resolve, reject) => {
+                html2canvas(el,{
+                    useCORS: true, // 【重要】开启跨域配置
+                    scale: window.devicePixelRatio < 3 ? window.devicePixelRatio : 2,
+                    allowTaint: true, // 允许跨域图片
+                })
+                .then(canvas => {
+                    resolve(canvas)
+                })
+                .catch(err=>reject(err));
+            })
+        },
+         /**
+         * 弹窗拖拽功能
+         * @params {Object} el - 元素节点
+         * @params {String} strongName - localStrong存储名
+         */
+        drag(el,strongName = ''){
+            if(!el||!strongName){
+                console.log(el)
+                return null
+            }
+            //获取存储的定位信息
+            const item = window.localStorage.getItem(strongName)
+            console.log(JSON.parse(item))
+            //设置节点定位
+            if(item){
+                const {top,left} = JSON.parse(item)
+                el.style.top = top + 'px';
+                el.style.left = left + 'px';
+            }
+
+            let disX,disY,startTime,lastTime,startLeft,lastLeft,startTop,lastTop;
+
+            el.onmousedown = function(event){
+                //鼠标距节点左边缘的距离
+                disX = event.pageX - el.offsetLeft;
+                //鼠标距节点顶部的距离
+                disY = event.pageY -el.offsetTop;
+                //按下的时间
+                startTime = (new Date).getTime()
+                startTop = event.pageY;
+                startLeft = event.pageX;
+
+                document.onmousemove = function(event){
+                    let left = event.pageX - disX ;
+                    let top = event.pageY - disY;
+
+                    if(left < 0){
+                        left = 0
+                    }else{
+                        left = Math.min(left,document.documentElement.clientWidth - el.offsetWidth)
+                    }
+                    if(top < 0){
+                        top = 0
+                    }else{
+                        top = Math.min(top,document.documentElement.clientHeight - el.offsetHeight)
+                    }
+
+                    el.style.left =  left + 'px';
+                    el.style.top = top + 'px';
+                    //存储位置信息
+                    window.localStorage.setItem(strongName,JSON.stringify({left,top}))
+                }
+
+                document.onmouseup = function(event){
+                    lastTime = (new Date).getTime()
+                    console.log(event)
+                    lastTop = event.pageY;
+                    lastLeft = event.pageX;
+                    document.onmousemove = null
+                }
+                //阻止点击捕获事件
+                document.addEventListener('click',(event)=>{
+                    if((Math.abs(lastTop - startTop) > 5)||(Math.abs(lastLeft - startLeft) > 5)||(lastTime - startTime > 500)) event.stopPropagation()
+                },true)
+            }
+        },
+        /**
+         * 保存blob数据至本地的方法
+         * @params {Blob} content - 需要保存的blob数据
+         * @params {String} file_name - 保存文件的命名
+         * @params {String} type - 保存文件的格式
+         */
+        save(content,file_name, type="") {
+            if (!type && content instanceof Blob) {
+                type = content.type;
+            }
+
+            let blob = null;
+            if (content instanceof Array) {
+                blob = new Blob(content, { type });
+            } else {
+                blob = new Blob([content], { type });
+            }
+
+            const url = URL.createObjectURL(blob);
+            const el = document.createElement("a");
+            el.download = file_name || "未命名文件";
+            el.href = url;
+            el.click();
+            URL.revokeObjectURL(url);
+        },
+
+    }   
+    //---------------------------公共方法结束---------------------------
+
+    //---------------------------文档下载类开始-------------------------
+    class DocDownload{
+        // 下载弹窗id
+        elementId = 'zhihuDocDownload';
+        //是否已经创建下载弹窗
+        isMount = false;
+        //开始页码
+        pageStart = {
+            value:'',
+            initVlaue:''
+        };
+        //结束页码
+        pageEnd = {
+            value:'',
+            initVlaue:''
+        };
+        //预览速度
+        preSpeed = {
+            value:300,
+            initVlaue:300
+        };
+        //是否有预览失败的
+        hasPreviewFail = false;
+        //是否正在预览
+        isPreviewing = false;
+        //是否开启自动预览
+        autoPreview = true;
+        //是否开启分批下载
+        splitDownload = true;
+        //当前平台 道客：daoke 豆丁：docin
+        platform = '';
+        //css样式
+        style = `
+            .zh-dialog{
+                box-shadow: 0 0 6px 3px #00000038;
+                z-index: 99999997;
+                top: 100px;
+                position: fixed;
+                right: 50px;
+                background: #fff;
+                padding:20px;
+                border-radius: 8px;
+                width:120px;
+                box-sizing: content-box;
+            }
+            .zh-dialog-item{
+                display:flex;
+                flex-direction:column
+            }
+            .zh-dialog-item .title{
+                font-size:14px;
+                font-weight:500;
+                color:#333;
+                margin-bottom:5px
+            }
+            .zh-dialog-item .content{
+                display:flex;
+                align-items:center;
+                margin-bottom: 10px;
+            }
+            .zh-dialog-item .content .cut{
+                margin: 0 5px
+            }
+            .zh-dialog-item .content .text{
+                font-size:12px;
+                color:#666;
+                margin-left:5px
+            }
+            .zh-default{
+                margin-bottom:10px;
+            }
+        `;
+        constructor(options){
+            if(options.preSpeed){
+                this.preSpeed.value = options.preSpeed
+                this.preSpeed.initVlaue = options.preSpeed
+            }
+
+            if(!options.platform) throw new TypeError('请传入platform')
+            this.platform = options.platform
+           
+            if(options.autoPreview !== undefined){
+                this.autoPreview = options.autoPreview;
+            }
+            if(options.splitDownload !== undefined){
+                this.splitDownload = options.splitDownload;
+            }
+
+            this.createDialogElement()
+        }
+
+        //创建下载弹窗元素
+        createDialogElement(){
+            if(this.isMount) return;
+            //插入公共CSS
+            Utils.appendStyle(COMMON_STYLE)
+            //插入CSS
+            Utils.appendStyle(this.style)
+            //创建div元素
+            let autoPreviewHtml = this.autoPreview ?`
+                <div class="zh-dialog-item">
+                    <label class="title user-select">预览速度</label>
+                    <div class="content">
+                        <input class="zh-input" id="preSpeed" value="${this.preSpeed.value}"></input>
+                        <span class="text user-select">像素</span>
+                    </div>
+                </div>
+                <div class="zh-button zh-default user-select" id="zh-preview">自动预览</div>
+            `:''
+            let splitDownloadHtml = this.splitDownload?`
+                <div class="zh-dialog-item">
+                    <label class="title user-select">分批下载</label>
+                    <div class="content">
+                        <input class="zh-input" placeholder="页码" type="number" id="pageStart"></input>
+                        <span class="cut">-</span>
+                        <input class="zh-input" placeholder="页码" type="number" id="pageEnd"></input>
+                    </div>
+                </div>
+            `:''
+            let div = document.createElement('div')
+            let html = `
+                <div id="zh-wk" class="zh-dialog zh-container">
+                    ${splitDownloadHtml}
+                    ${autoPreviewHtml}
+                    <div class="zh-button user-select" id="zh-download">下载文档</div>
+                </div>
+            `
+            div.innerHTML = html
+            div.setAttribute('id',this.elementId)
+            // 挂载到body
+            document.body.appendChild(div)
+            if(this.autoPreview){
+                document.querySelector('#zh-preview').addEventListener('click',()=>{
+                    if(!this.isPreviewing){
+                        this.isPreviewing = true
+                        this.preview().finally(()=>{
+                            this.isPreviewing = false
+                        })
+                    }
+                })
+                this.observerInputChange('preSpeed');
+            }
+
+            if(this.splitDownload){
+                this.observerInputChange('pageStart');
+                this.observerInputChange('pageEnd');
+            }
+            
+            //拖拽移动
+            let el = document.querySelector('#zh-wk')
+            Utils.drag(el,'zh-wk')
+            
+        }
+        // 监听点击下载
+        start(callback){
+            let isClick = false
+            document.querySelector('#zh-download').addEventListener('click',(e)=>{
+                //如果未点击或预览失败可以点击
+                if(!isClick&&!this.isPreviewing){
+                    //点击之后锁死，不让再次点击
+                    isClick = true
+                    callback(()=>{
+                        //重置开关状态
+                        isClick = false;
+                        this.hasPreviewFail = false;
+                    })
+                }
+            })
+        }
+        //监听输入框变化，变化后给变量赋值
+        observerInputChange(id) {
+            document.querySelector('#'+id).addEventListener('change',(e)=>{
+                let val = Math.abs(parseInt(e.target.value)) 
+                e.target.value = val||this[id].initVlaue
+                this[id].value = val||this[id].initVlaue
+            })
+        }
+        //检测页码是否输入有误
+        checkPage(len){
+            
+            if(!this.pageStart.value||!this.pageEnd.value) {
+                return true
+            }
+
+            if(this.pageStart.value>this.pageEnd.value) {
+                throw new TypeError('输入错误,起始页码大于结束页码')
+            }
+            if(this.pageStart.value > len){
+                throw new TypeError('输入错误,起始页码大于页码数')
+            }
+            if(this.pageEnd.value > len){
+                throw new TypeError('输入错误,结束页码大于页码数')
+            }
+
+            return true
+            
+        }
+        //检测页面是否预览完成
+        checkPageHasNoPreview(){
+            var map ={
+                daoke:{
+                    el:'.page_pb',
+                    verifyFn:(i)=>elements[i - 1].childNodes.length !== 0
+                },
+                docin:{
+                    el:'.model',
+                    verifyFn:(i)=>document.querySelector('#img_'+i)?.childNodes.length === 0
+                    
+                },
+                max_book:{
+                    el:'.webpreview-item',
+                    verifyFn:(i)=>elements[i - 1].querySelector('img').getAttribute('src') === null
+                },
+                sodoc:{
+                    el:'.wenku-detail__showdoc__imgContainer',
+                    verifyFn:(i)=>elements[i - 1].childNodes.length === 0
+                }
+            }
+            var elements = document.querySelectorAll(map[this.platform].el);
+            let noPreview = [];
+
+            // 下载页码
+            let pageStart = (this.pageStart.value&&this.pageEnd.value)?this.pageStart.value:1
+            let pageEnd = (this.pageStart.value&&this.pageEnd.value)?this.pageEnd.value:elements.length
+
+            for ( let i=pageStart; i <= pageEnd;i++){
+                let isEmpty = map[this.platform].verifyFn(i)
+                console.log(isEmpty)
+                isEmpty&&noPreview.push(i)
+            }
+            if(noPreview.length > 0){
+                let errorMsg = noPreview.map(item=>`第${item}页`).join(',')
+                Utils.toast(`${errorMsg} 预览失败，请手动预览上述页码`,'error',5000);
+                return true
+            }
+
+            return false
+            
+        } 
+        //滚动页面预览
+        async preview(targetLocation){
+
+            switch (this.platform){
+                case 'daoke':
+                    //展开全文
+                    let continueButton = document.querySelector("#continueButton")
+                    continueButton&&window.buyContinueRead();
+                break;
+                case 'max_book':
+                    let WebPreview = window?.WebPreview||''
+                    if(!WebPreview) return Utils.toast('该页面不支持自动预览','error')
+                    let preview_page = WebPreview?.Data?.preview_page
+                    WebPreview.Preview.jump(preview_page)
+                break;
+            }
+            // //展开全文docin
+            // let continueButton = document.querySelector(".model-fold-show")
+            // continueButton&&window.docinReader.halfPageHanlde&&window.docinReader.halfPageHanlde();
+
+            let target = targetLocation||document.body.scrollHeight;
+            await Utils.scrollPage(this.preSpeed.value,0,target,600)
+            return Promise.resolve(true)
+        }
+        // 导出PDF
+        async exportPdf(pageCanvas,title){
+
+            async function max_book_ppt(i){
+                //跳转至该页面
+                window.gosld(i)
+                //清除父容器缩放
+                document.querySelector('#view')?.setAttribute("style", "")
+                Utils.progress.showStatus(`正在获取第${i + 1}页网页数据`);
+                await Utils.sleep(100);
+                let node = document.querySelector('#view'+i)
+                return Utils.htmlToCanvas(node)
+            }
+
+            try {
+                // 下载页码
+                let pageStart = (this.pageStart.value&&this.pageEnd.value)?this.pageStart.value - 1:0
+                let pageEnd = (this.pageStart.value&&this.pageEnd.value)?this.pageEnd.value:pageCanvas.length
+                //创建PDF
+                let doc = null
+
+                for(let i = pageStart;i < pageEnd; i++){
+                    
+                    let page = i + 1;
+                    let el = pageCanvas[i]
+                    Utils.progress.showStatus(`正在创建第${page}页`,(page/pageCanvas.length) * 100);
+
+                    if(this.platform === 'max_book_ppt') el = await max_book_ppt(i)
+
+                    //获取页面尺寸
+                    let pageSize = [parseInt(pageCanvas[i].clientWidth),parseInt(pageCanvas[i].clientHeight)];
+                    //如果没有创建PDF，先创建，已创建直接增加页面
+                    if (!doc) {
+                        doc = new Pdf(pageSize);
+                    } else {
+                        doc.addPage(pageSize);
+                    }
+
+                    Utils.progress.showStatus(`正在合成第${page}页`);
+        
+                    let imageData
+                    //图片节点先加载图片至本地
+                    console.log(el,el.tagName)
+                    if(el.tagName === 'IMG'){
+                        imageData = await Utils.loadImage(el.getAttribute("src"))
+                        console.log(imageData.offsetWidth)
+                    }else if(el.tagName === 'CANVAS'){
+                        imageData =el.toDataURL('image/jpeg', 1.0);
+                    }else{
+                        throw new TypeError('imageData：此节点数据不能转换成图片')
+                    }
+                    //将图片数据写入PDF
+                    doc.addImage({
+                        imageData,
+                        width:pageSize[0],
+                        height:pageSize[1]
+                    });
+
+                    Utils.progress.showStatus(`第${page}页创建成功`);
+
+                    await Utils.sleep(100)
+                }
+                doc.save(title);
+            } catch (error) {
+                return Promise.reject(error)
+            }finally{
+                Utils.progress.hideStatus()
+            }
+            
+        }
+    }
+    //---------------------------文档下载类结束-------------------------
+
+    //---------------------------jsPdf类开始---------------------------
+    class Pdf{
+        doc = null;
+        
+        constructor(pageSize){
+            this.doc = new jspdf.jsPDF({
+                orientation: pageSize[0] < pageSize[1] ? 'p' : 'l',
+                unit: 'pt',
+                format: pageSize,
+                compress: true
+            });
+        }
+        // 增加页面
+        addPage(pageSize){
+            this.doc.addPage({
+                orientation: pageSize[0] < pageSize[1] ? 'p' : 'l',
+                format: pageSize,
+            })
+        }
+        //添加图片到页面
+        addImage({imageData,width,height,x = 0,y = 0,type="JPEG"}){
+            this.doc.addImage(imageData, type, x, y, width, height);
+        }
+        //保存pdf
+        save(title){
+            this.doc.save(`${title}.pdf`);
+        }
+    }
+    //---------------------------jsPdf类结束---------------------------
+
+    //---------------------------文库初始化开始-------------------------
+    const wenkuInit = {
+            //道客巴巴初始化
+            daoke(){
+                //创建节点
+                const docDown = new DocDownload({
+                    preSpeed:400,
+                    platform:'daoke'
+                })
+            
+                docDown.start(async (reClick)=>{
+                    try {
+                        //输入了页码才检测页码是否正常
+                        let len = document.querySelectorAll('.outer_page').length||0
+                        docDown.checkPage(len)
+                        //检测是否有页面未预览成功
+                        docDown.hasPreviewFail = docDown.checkPageHasNoPreview()
+
+                        if(!docDown.hasPreviewFail){
+                            //标题
+                            let title = window?.words||"道客巴巴文档";
+                            //页面的canvas
+                            let pageCanvas = document.getElementsByClassName("inner_page");
+                            //下载文档
+                            await docDown.exportPdf(pageCanvas,title)
+                        }    
+                    } catch (error) {
+                        Utils.toast(error.message,'error')
+                    } finally{
+                        reClick()
+                    }
+                        
+                })
+            
+            },
+            //豆丁初始化
+            docin(){
+                //创建节点
+                const docDown = new DocDownload({
+                    preSpeed:400,
+                    platform:'docin'
+                })
+
+                docDown.start(async (reClick)=>{
+                    try { 
+                        //输入了页码才检测页码是否正常
+                        let len = document.querySelectorAll('.model').length||0
+                        docDown.checkPage(len)
+                        //检测是否有页面未预览成功
+                        docDown.hasPreviewFail = docDown.checkPageHasNoPreview()
+            
+                        if(!docDown.hasPreviewFail){
+                            //标题
+                            let title = window?.docinShareConfig?.title||"豆丁文档";
+                            //页面的canvas
+                            let container = document.querySelector('#contentcontainer')
+                            let pageCanvas = container?.getElementsByTagName("canvas").length>0?container.getElementsByTagName("canvas"):container.getElementsByTagName("img");
+                            //下载文档
+                            await docDown.exportPdf(pageCanvas,title)
+                        }    
+                    } catch (error) {
+                        console.log(error)
+                        Utils.toast(error.message,'error')
+                    } finally{
+                        reClick()
+                    }
+                        
+                })
+                
+            },
+            //原创力初始化
+            max_book(){
+                //创建节点
+                const docDown = new DocDownload({
+                    preSpeed:400,
+                    platform:'max_book'
+                })
+                //获取PPT预览链接
+                const getOfficeSrc = function(detail){
+                    let previewUrl = detail.preview.pic.view_token
+                    window.open(previewUrl)
+                }
+
+                docDown.start(async (reClick)=>{
+                    try { 
+                       let detail = window?.base?.detail||''
+                       if(!detail) throw new TypeError('下载错误，文档参数获取失败')
+                       if(detail.format === "pptx"||detail.format === "ppt") {
+                            getOfficeSrc(detail)
+                       }else{
+                            //输入了页码才检测页码是否正常
+                            let len = document.querySelectorAll('.webpreview-item').length||0
+                            docDown.checkPage(len)
+                            //检测是否有页面未预览成功
+                            docDown.hasPreviewFail = docDown.checkPageHasNoPreview()
+                
+                            if(!docDown.hasPreviewFail){
+                                //标题
+                                let title = window?.base?.detail?.search_q||"原创力文档";
+                                //页面的canvas
+                                let pageCanvas = document.querySelectorAll('.webpreview-item img');
+                                //下载文档
+                                await docDown.exportPdf(pageCanvas,title)
+                            }    
+                       } 
+                    } catch (error) {
+                        console.log(error)
+                        Utils.toast(error.message,'error')
+                    } finally{
+                        reClick()
+                    }
+                        
+                })
+                
+            },
+            max_book_ppt(){
+                 //创建节点
+                 const docDown = new DocDownload({
+                    preSpeed:400,
+                    platform:'max_book_ppt',
+                    autoPreview:false
+                })
+
+                const preview = function(pageCount){
+                    return new Promise(async (resolve, reject) => {
+                        let timer = null
+                        timer = setInterval(()=>{
+                            window.nextPage()
+                            Utils.toast('正在自动预览页面，请勿操作','warning',370)
+                            if(document.querySelector('#PageIndex').textContent == pageCount){
+                                clearInterval(timer)
+                                resolve(true)
+                            }
+                        },400)
+                    })
+                }
+
+                docDown.start(async (reClick)=>{
+                    try { 
+                        //输入了页码才检测页码是否正常
+                        let len = document.querySelectorAll('#PageInfo div').length||0
+                        docDown.checkPage(len)
+
+                        let pageCount = window?.pageCount
+                        if(!pageCount) throw new TypeError('下载错误，文档参数获取失败')
+                        //预览页面
+                        await preview(pageCount)
+                        //获取节点
+                        let pageCanvas = document.querySelectorAll('#view>div')
+                        if(pageCanvas.length > 0){
+                            //标题
+                            let title = "原创力PPT文档";
+                            //下载文档
+                            await docDown.exportPdf(pageCanvas,title)
+                        }  
+                        console.log('预览完成')
+                    } catch (error) {
+                        console.log(error)
+                        Utils.toast(error.message,'error')
+                    } finally{
+                        reClick()
+                    }
+                        
+                
+                })
+            },
+            //智库
+            mbalib(){     
+                //创建节点
+                const docDown = new DocDownload({
+                    preSpeed:400,
+                    platform:'mbalib',
+                    autoPreview:false,
+                    splitDownload:false
+                })
+                docDown.start(async reClick =>{
+                    try { 
+                        let DEFAULT_URL = window?.DEFAULT_URL||null
+                        if(!DEFAULT_URL) throw new TypeError('DEFAULT_URL：文档下载失败')
+                        Utils.toast('正在获取pdf文件数据')
+                        let content = await Utils.request('GET', DEFAULT_URL, null,null,'blob');
+                        let file_name = window?.wgDocTitle||'智库文档'
+                        Utils.toast('成功获取到pdf文件数据，正在下载')
+                        Utils.save(content,file_name)
+                    } catch (error) {
+                        console.log(error)
+                        Utils.toast(error.message,'error')
+                    } finally{
+                        reClick()
+                    }
+                })
+            },
+            //百度
+            bdwk(){
+                 //创建节点
+                 const docDown = new DocDownload({
+                    preSpeed:400,
+                    platform:'bdwk',
+                    autoPreview:false,
+                    splitDownload:false
+                })
+                docDown.start(reClick=>{
+                    window.open('http://wenku.zhihupe.com/tool/index?url='+encodeURIComponent(window.location.href));
+                    reClick()
+                })
+            },
+            //360
+            sodoc(){
+                //创建节点
+                const docDown = new DocDownload({
+                    preSpeed:400,
+                    platform:'sodoc'
+                })
+                docDown.start(async (reClick)=>{
+                    try { 
+                        let asyncData = window?.asyncData||null;
+                        if(!asyncData) throw new TypeError('asyncData：文档下载失败');
+
+                        //输入了页码才检测页码是否正常
+                        let len = asyncData?.DocInfo?.Field03.length||0;
+                        docDown.checkPage(len);
+
+                        //检测是否有页面未预览成功
+                        docDown.hasPreviewFail = docDown.checkPageHasNoPreview()
+                
+                        if(!docDown.hasPreviewFail){
+                            //标题
+                            let title = asyncData?.DocInfo.Title||'360文档';
+                            //页面的canvas
+                            let pageCanvas = document.querySelectorAll('.wenku-detail__showdoc__imgContainer>img');
+                            //下载文档
+                            await docDown.exportPdf(pageCanvas,title)
+                        }    
+                    } catch (error) {
+                        console.log(error)
+                        Utils.toast(error.message,'error')
+                    } finally{
+                        reClick()
+                    }
+                })
+            }
+    }
+    //---------------------------文库初始化结束-------------------------
+    //网址匹配
+    const siteMap = [
+        {
+            match:['www.doc88.com/p.*'],
+            initFunc:wenkuInit.daoke
+        },
+        {
+            match:['www.docin.com/p.*'],
+            initFunc:wenkuInit.docin
+        },
+        {
+            match:['max.book118.com/html/.*'],
+            initFunc:wenkuInit.max_book
+        },
+        {
+            match:['view-cache.book118.com/pptView.html','view.*.book118.com'],
+            initFunc:wenkuInit.max_book_ppt
+        },
+        {
+            match:['doc.mbalib.com/view/.*'],
+            initFunc:wenkuInit.mbalib
+        },
+        {
+            match:['wenku.baidu.com/view/.*','wenku.baidu.com/tfview/.*'],
+            initFunc:wenkuInit.bdwk
+        },
+        {
+            match:['wenku.so.com/d/.*'],
+            initFunc:wenkuInit.sodoc
+        }
+    ]
+
+    //生成正则表达式
+    function createReg(arr){
+        return new RegExp(arr.join('|'))
+    }
+
+    //根据网址匹配
+    for (const site of siteMap) {
+            let reg = createReg(site.match)
+            let host = window.location.hostname + window.location.pathname
+            let result = reg.test(host)
+            console.log(result,host)
+            if(result){
+                    return site.initFunc()
+            }
+    }
+    // Your code here...
+})();
